@@ -1,0 +1,495 @@
+import asyncio
+import logging
+import json
+from pathlib import Path
+from aiogram import Bot, Dispatcher, F
+from aiogram.filters import CommandStart, Command
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from datetime import datetime
+
+# ========== НАСТРОЙКИ ==========
+# Админский чат для уведомлений
+ADMIN_CHAT_ID = -1003410520287
+
+# Директория для хранения статистики
+STATS_DIR = Path("stats_data")
+STATS_DIR.mkdir(exist_ok=True)
+
+# Токен статистического бота
+STATS_BOT_TOKEN = "8149773704:AAEMPILxahaM1q_iJB1pPq1yesOs4pGSlNs"
+
+# Список всех основных ботов
+BOT_TOKENS = {
+    "8236682033": "8236682033:AAFeu-Kt3UWSuxpNmfkUiB_y7eOxlKyHErE",
+    "8512131261": "8512131261:AAHgbkXUzEA17cjmTL1DhUVj_w_nLRRlmxE",
+    "8487915930": "8487915930:AAEOjW-EM3adl2d0JFU0gSqv-qPA0u9-jC0",
+    "8522600978": "8522600978:AAHYw9idOsu8w4S336lroAGRsr8aDODeP9I",
+    "8263965404": "8263965404:AAEDuMdtm3S5XvT7_YfnARMr_mYzvg5Y95U",
+    "8557307240": "8557307240:AAE5Bm3DMkc1AnSx-Qh9o1LLDsJnk48bOlQ",
+    "8587347355": "8587347355:AAGuRoCpPv4ew0eJySICQeRMTnnYIXZQ5Wg",
+}
+
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# ========== ТЕКСТЫ СООБЩЕНИЙ ==========
+START_MESSAGE = """Привет, я Бот 🤖 который поможет получить деньги 💸
+
+Не хватает сейчас?
+Я выручу!
+
+Выберите страну для займа👇🏻"""
+
+RUSSIA_MESSAGE = """✅Чтобы получить займ от 10 до 200 тыс. руб. необходимо перейти по одной из ссылок ниже и заполнить анкету на сайте. (В течение 5 минут деньги придут вам на карту):
+
+🙋‍♀Совет: чтобы увеличить вероятность и скорость одобрения займа, оставьте анкеты сразу во всех компаниях!
+
+💳 Займы для Граждан Российской Федерации 🇷🇺:
+
+❤️ЗАЙМЕР - Акция «Первый займ под 0%»
+➡️ https://cutt.ly/ctttvFaX
+
+🔥Е-КАПУСТА - первый займ до 50 000 руб.
+➡️ https://cutt.ly/htttbJ2N
+
+MONEYMAN - Первый займ под 0%.
+➡️ https://cutt.ly/5tttbqMb
+
+LIME-ZAIM - 20.000₽ под 0% на 15 дней
+➡️ https://cutt.ly/3tttHzwR
+
+ONECLICKMONEY - Первый займ до 30.000₽
+➡️ https://cutt.ly/ktttHg0j
+
+А.ДЕНЬГИ - Первые 21 дней — бесплатно
+➡️ https://cutt.ly/ytttHtBC
+
+PAYPS - 10.000₽ под 0%
+➡️ https://cutt.ly/GtttHqIs
+
+МИГКРЕДИТ - первый займ до 100.000 руб
+➡️ https://cutt.ly/0tttG7WU
+
+СРОЧНОДЕНЬГИ - первый займ до 100.000 руб
+➡️ https://cutt.ly/ztttG9b6
+
+ТУРБОЗАЙМ - первый займ до 100.000 руб
+➡️ https://cutt.ly/ZtttGM1T
+
+ВЕББАНКИР - первый займ до 100.000 руб
+➡️ https://cutt.ly/7tttGXyX
+
+СМС Финанс - 7 дней без %
+➡️ https://cutt.ly/xtttGJ4t
+
+Credit7 - Первый Заем бесплатно
+➡️ https://cutt.ly/ttttGSRM
+
+BelkaCredit - Первый Заем бесплатно
+➡️ https://cutt.ly/ZtttGRFC
+
+Деньга - 14 дней без %
+➡️ https://cutt.ly/xtttGmPq
+
+Микроклад - До 15.000р на первый займ
+➡️ https://cutt.ly/htttGxqq"""
+
+KAZAKHSTAN_MESSAGE = """✅Чтобы получить необходимо перейти по одной из ссылок ниже и заполнить анкету на сайте. (В течение 5 минут деньги придут вам на карту):
+
+🙋‍♀Совет: чтобы увеличить вероятность и скорость одобрения займа, оставьте анкеты сразу во всех компаниях!
+
+CreditBar - Автоматическое одобрение 70 000 тенге
+➡ https://cutt.ly/YeYPVWtv
+
+Credit365 - До 145.000 тенге без переплат
+➡ https://cutt.ly/yeYPVBUU
+
+CreditPlus - Первый займ под 0.00%
+➡ https://cutt.ly/YeYPBzvB
+
+Quant - Первый займ под 0.00%
+➡ https://cutt.ly/ieYPBZ8l
+
+Acredit - Микрокредит под 0% до 145.000 тенге
+➡ https://cutt.ly/FeYPNt2p
+
+Vivus - до 170.000 тенге без %
+➡ https://cutt.ly/XeYPNQwo"""
+
+
+# ========== ФУНКЦИИ КЛАВИАТУР ==========
+def get_country_keyboard():
+    """Создает клавиатуру с выбором страны"""
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🇷🇺 Россия", callback_data="country_russia")],
+        [InlineKeyboardButton(text="🇰🇿 Казахстан", callback_data="country_kazakhstan")]
+    ])
+    return keyboard
+
+
+def get_back_keyboard():
+    """Создает клавиатуру с кнопкой 'Назад'"""
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_start")]
+    ])
+    return keyboard
+
+
+# ========== ФУНКЦИИ СТАТИСТИКИ ==========
+def get_stats_file(bot_id: str):
+    """Возвращает путь к файлу статистики для конкретного бота"""
+    return STATS_DIR / f"bot_{bot_id}.json"
+
+
+def load_stats(bot_id: str):
+    """Загружает статистику конкретного бота"""
+    stats_file = get_stats_file(bot_id)
+    if stats_file.exists():
+        try:
+            with open(stats_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Failed to load stats for bot {bot_id}: {e}")
+
+    return {
+        "bot_id": bot_id,
+        "users": {},
+        "countries": {
+            "russia": 0,
+            "kazakhstan": 0
+        }
+    }
+
+
+def save_stats(bot_id: str, stats):
+    """Сохраняет статистику конкретного бота"""
+    stats_file = get_stats_file(bot_id)
+    try:
+        with open(stats_file, 'w', encoding='utf-8') as f:
+            json.dump(stats, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error(f"Failed to save stats for bot {bot_id}: {e}")
+
+
+def update_user_stats(bot_id: str, user_id: int, username: str, action: str = None):
+    """Обновляет статистику пользователя для конкретного бота"""
+    stats = load_stats(bot_id)
+
+    user_id_str = str(user_id)
+    now = datetime.now().isoformat()
+
+    if user_id_str not in stats["users"]:
+        stats["users"][user_id_str] = {
+            "username": username,
+            "first_seen": now,
+            "last_action": action or "start"
+        }
+    else:
+        stats["users"][user_id_str]["username"] = username
+        stats["users"][user_id_str]["last_action"] = action or stats["users"][user_id_str]["last_action"]
+
+    if action == "russia":
+        stats["countries"]["russia"] += 1
+    elif action == "kazakhstan":
+        stats["countries"]["kazakhstan"] += 1
+
+    save_stats(bot_id, stats)
+    return stats
+
+
+def load_all_stats():
+    """Загружает и агрегирует статистику со всех ботов"""
+    if not STATS_DIR.exists():
+        return None
+
+    aggregated_stats = {
+        "total_bots": 0,
+        "active_bots": 0,
+        "all_users": set(),
+        "countries": {
+            "russia": 0,
+            "kazakhstan": 0
+        },
+        "bot_stats": {}
+    }
+
+    for stats_file in STATS_DIR.glob("bot_*.json"):
+        try:
+            with open(stats_file, 'r', encoding='utf-8') as f:
+                bot_stats = json.load(f)
+                bot_id = bot_stats.get("bot_id", "unknown")
+
+                aggregated_stats["total_bots"] += 1
+
+                if bot_stats.get("users"):
+                    aggregated_stats["active_bots"] += 1
+
+                for user_id in bot_stats.get("users", {}).keys():
+                    aggregated_stats["all_users"].add(user_id)
+
+                aggregated_stats["countries"]["russia"] += bot_stats.get("countries", {}).get("russia", 0)
+                aggregated_stats["countries"]["kazakhstan"] += bot_stats.get("countries", {}).get("kazakhstan", 0)
+
+                aggregated_stats["bot_stats"][bot_id] = {
+                    "users": len(bot_stats.get("users", {})),
+                    "russia": bot_stats.get("countries", {}).get("russia", 0),
+                    "kazakhstan": bot_stats.get("countries", {}).get("kazakhstan", 0)
+                }
+
+        except Exception as e:
+            logger.error(f"Failed to load stats from {stats_file}: {e}")
+            continue
+
+    aggregated_stats["total_unique_users"] = len(aggregated_stats["all_users"])
+    del aggregated_stats["all_users"]
+
+    return aggregated_stats if aggregated_stats["total_bots"] > 0 else None
+
+
+def format_stats_message(stats):
+    """Форматирует сообщение со статистикой"""
+    if not stats:
+        return "📊 <b>Статистика</b>\n\n❌ Нет данных."
+
+    total_bots = stats.get("total_bots", 0)
+    active_bots = stats.get("active_bots", 0)
+    total_users = stats.get("total_unique_users", 0)
+    russia_count = stats.get("countries", {}).get("russia", 0)
+    kazakhstan_count = stats.get("countries", {}).get("kazakhstan", 0)
+
+    message = (
+        f"📊 <b>ОБЩАЯ СТАТИСТИКА СЕТИ БОТОВ</b>\n\n"
+        f"🤖 <b>Всего ботов:</b> {total_bots}\n"
+        f"✅ <b>Активных ботов:</b> {active_bots}\n"
+        f"👥 <b>Уникальных пользователей:</b> {total_users}\n\n"
+        f"🌍 <b>Выбор стран:</b>\n"
+        f"🇷🇺 Россия: {russia_count}\n"
+        f"🇰🇿 Казахстан: {kazakhstan_count}\n\n"
+        f"📈 <b>Процентное соотношение:</b>\n"
+    )
+
+    total_country_selections = russia_count + kazakhstan_count
+    if total_country_selections > 0:
+        russia_percent = (russia_count / total_country_selections) * 100
+        kazakhstan_percent = (kazakhstan_count / total_country_selections) * 100
+        message += (
+            f"🇷🇺 Россия: {russia_percent:.1f}%\n"
+            f"🇰🇿 Казахстан: {kazakhstan_percent:.1f}%\n\n"
+        )
+    else:
+        message += "Пока нет выборов стран\n\n"
+
+    bot_stats = stats.get("bot_stats", {})
+    if bot_stats:
+        sorted_bots = sorted(
+            bot_stats.items(),
+            key=lambda x: x[1]["users"],
+            reverse=True
+        )[:5]
+
+        message += f"🏆 <b>Топ-5 самых активных ботов:</b>\n"
+        for i, (bot_id, bot_data) in enumerate(sorted_bots, 1):
+            message += (
+                f"{i}. Бот {bot_id}: {bot_data['users']} пользователей "
+                f"(🇷🇺 {bot_data['russia']} / 🇰🇿 {bot_data['kazakhstan']})\n"
+            )
+
+    return message
+
+
+async def send_admin_notification(bot: Bot, bot_id: str, user_id: int, username: str, action: str):
+    """Отправляет уведомление в админский чат"""
+    try:
+        message = (
+            f"📊 <b>Действие пользователя</b>\n\n"
+            f"🤖 Бот ID: <code>{bot_id}</code>\n"
+            f"👤 User ID: <code>{user_id}</code>\n"
+            f"📝 Username: @{username if username else 'Не указан'}\n"
+            f"🎯 Действие: {action}"
+        )
+        logger.info(f"Sending notification to chat {ADMIN_CHAT_ID}")
+        result = await bot.send_message(
+            chat_id=ADMIN_CHAT_ID,
+            text=message,
+            parse_mode="HTML"
+        )
+        logger.info(f"Notification sent successfully: message_id={result.message_id}")
+    except Exception as e:
+        logger.error(f"Failed to send admin notification to {ADMIN_CHAT_ID}: {type(e).__name__}: {e}")
+
+
+# ========== КЛАСС ОСНОВНОГО БОТА ==========
+class LoanBot:
+    """Класс для управления одним ботом"""
+
+    def __init__(self, bot_id: str, bot_token: str):
+        self.bot_id = bot_id
+        self.bot_token = bot_token
+        self.bot = Bot(token=bot_token)
+        self.dp = Dispatcher()
+        self._setup_handlers()
+
+    def _setup_handlers(self):
+        """Настраивает обработчики"""
+        self.dp.message.register(self.cmd_start, CommandStart())
+        self.dp.callback_query.register(self.callback_country_russia, F.data == "country_russia")
+        self.dp.callback_query.register(self.callback_country_kazakhstan, F.data == "country_kazakhstan")
+        self.dp.callback_query.register(self.callback_back_to_start, F.data == "back_to_start")
+
+    async def cmd_start(self, message: Message):
+        """Обработчик команды /start"""
+        logger.info(f"Bot {self.bot_id}: User {message.from_user.id} started")
+
+        update_user_stats(self.bot_id, message.from_user.id, message.from_user.username, "start")
+
+        await send_admin_notification(
+            bot=self.bot,
+            bot_id=self.bot_id,
+            user_id=message.from_user.id,
+            username=message.from_user.username,
+            action="🚀 Запустил бота (/start)"
+        )
+
+        await message.answer(
+            text=START_MESSAGE,
+            reply_markup=get_country_keyboard()
+        )
+
+    async def callback_country_russia(self, callback: CallbackQuery):
+        """Обработчик выбора России"""
+        logger.info(f"Bot {self.bot_id}: User {callback.from_user.id} selected Russia")
+
+        update_user_stats(self.bot_id, callback.from_user.id, callback.from_user.username, "russia")
+
+        await callback.message.edit_text(
+            text=RUSSIA_MESSAGE,
+            reply_markup=get_back_keyboard(),
+            disable_web_page_preview=True
+        )
+        await callback.answer()
+
+    async def callback_country_kazakhstan(self, callback: CallbackQuery):
+        """Обработчик выбора Казахстана"""
+        logger.info(f"Bot {self.bot_id}: User {callback.from_user.id} selected Kazakhstan")
+
+        update_user_stats(self.bot_id, callback.from_user.id, callback.from_user.username, "kazakhstan")
+
+        await callback.message.edit_text(
+            text=KAZAKHSTAN_MESSAGE,
+            reply_markup=get_back_keyboard(),
+            disable_web_page_preview=True
+        )
+        await callback.answer()
+
+    async def callback_back_to_start(self, callback: CallbackQuery):
+        """Обработчик кнопки 'Назад'"""
+        logger.info(f"Bot {self.bot_id}: User {callback.from_user.id} returned to start")
+
+        await callback.message.edit_text(
+            text=START_MESSAGE,
+            reply_markup=get_country_keyboard()
+        )
+        await callback.answer()
+
+    async def start(self):
+        """Запуск бота"""
+        try:
+            logger.info(f"Starting bot {self.bot_id}...")
+            await self.bot.delete_webhook(drop_pending_updates=True)
+            await self.dp.start_polling(self.bot, allowed_updates=self.dp.resolve_used_update_types())
+        except Exception as e:
+            logger.error(f"Bot {self.bot_id} error: {e}")
+        finally:
+            await self.bot.session.close()
+            logger.info(f"Bot {self.bot_id} stopped")
+
+
+# ========== СТАТИСТИЧЕСКИЙ БОТ ==========
+async def cmd_stats(message: Message):
+    """Обработчик команды /stats - работает только в приватном чате"""
+    # Проверяем, что команда пришла из приватного чата
+    if message.chat.type != "private":
+        logger.warning(f"Stats command from non-private chat: {message.chat.type}")
+        return
+
+    logger.info(f"Stats command received from {message.from_user.id}")
+
+    stats = load_all_stats()
+    stats_message = format_stats_message(stats)
+
+    await message.answer(
+        text=stats_message,
+        parse_mode="HTML"
+    )
+
+
+async def run_stats_bot():
+    """Запуск статистического бота"""
+    try:
+        logger.info("Starting stats bot...")
+        bot = Bot(token=STATS_BOT_TOKEN)
+        dp = Dispatcher()
+
+        dp.message.register(cmd_stats, Command("stats"))
+
+        await bot.delete_webhook(drop_pending_updates=True)
+        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+    except Exception as e:
+        logger.error(f"Stats bot error: {e}")
+    finally:
+        await bot.session.close()
+        logger.info("Stats bot stopped")
+
+
+async def run_loan_bot(bot_id: str, bot_token: str):
+    """Запускает один бот займов"""
+    try:
+        bot = LoanBot(bot_id, bot_token)
+        await bot.start()
+    except Exception as e:
+        logger.error(f"Failed to start bot {bot_id}: {e}")
+
+
+# ========== ГЛАВНАЯ ФУНКЦИЯ ==========
+async def main():
+    """Запускает все боты одновременно"""
+    logger.info("=" * 60)
+    logger.info(f"🚀 ЗАПУСК ВСЕХ БОТОВ")
+    logger.info("=" * 60)
+    logger.info(f"📊 Основных ботов: {len(BOT_TOKENS)}")
+    logger.info(f"📈 Статистический бот: 1")
+    logger.info(f"📊 Всего ботов: {len(BOT_TOKENS) + 1}")
+    logger.info("=" * 60)
+
+    tasks = []
+
+    # Добавляем задачи для основных ботов
+    for bot_id, bot_token in BOT_TOKENS.items():
+        task = asyncio.create_task(run_loan_bot(bot_id, bot_token))
+        tasks.append(task)
+        logger.info(f"✅ Основной бот {bot_id} добавлен в очередь")
+
+    # Добавляем задачу для статистического бота
+    stats_task = asyncio.create_task(run_stats_bot())
+    tasks.append(stats_task)
+    logger.info(f"✅ Статистический бот добавлен в очередь")
+
+    logger.info("=" * 60)
+    logger.info("🔄 Запуск всех ботов...")
+    logger.info("=" * 60)
+
+    try:
+        await asyncio.gather(*tasks)
+    except Exception as e:
+        logger.error(f"Error in main: {e}")
+
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("\n⛔ Все боты остановлены пользователем")
