@@ -197,13 +197,16 @@ async def send_admin_notification(bot: Bot, bot_id: str, user_id: int, username:
             f"📝 Username: @{username if username else 'Не указан'}\n"
             f"🎯 Действие: {action}"
         )
-        await bot.send_message(
+        logger.info(f"Sending notification to chat {ADMIN_CHAT_ID}")
+        result = await bot.send_message(
             chat_id=ADMIN_CHAT_ID,
             text=message,
             parse_mode="HTML"
         )
+        logger.info(f"Notification sent successfully: message_id={result.message_id}")
     except Exception as e:
-        logger.error(f"Failed to send admin notification: {e}")
+        logger.error(f"Failed to send admin notification to {ADMIN_CHAT_ID}: {type(e).__name__}: {e}")
+        logger.error(f"Bot ID: {bot_id}, Chat ID: {ADMIN_CHAT_ID}")
 
 
 # ========== КЛАСС БОТА ==========
