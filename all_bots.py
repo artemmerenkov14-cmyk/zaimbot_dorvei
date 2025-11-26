@@ -29,6 +29,17 @@ BOT_TOKENS = {
     "8587347355": "8587347355:AAGuRoCpPv4ew0eJySICQeRMTnnYIXZQ5Wg",
 }
 
+# Username'ы ботов (Bot ID → Username)
+BOT_USERNAMES = {
+    "8236682033": "@bot1_username",  # Замените на реальные username'ы
+    "8512131261": "@bot2_username",
+    "8487915930": "@bot3_username",
+    "8522600978": "@bot4_username",
+    "8263965404": "@bot5_username",
+    "8557307240": "@bot6_username",
+    "8587347355": "@bot7_username",
+}
+
 # Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
@@ -293,8 +304,9 @@ def format_stats_message(stats):
 
         message += f"🏆 <b>Топ-5 самых активных ботов:</b>\n"
         for i, (bot_id, bot_data) in enumerate(sorted_bots, 1):
+            bot_username = BOT_USERNAMES.get(bot_id, f"Bot {bot_id}")
             message += (
-                f"{i}. Бот {bot_id}: {bot_data['users']} пользователей "
+                f"{i}. {bot_username}: {bot_data['users']} пользователей "
                 f"(🇷🇺 {bot_data['russia']} / 🇰🇿 {bot_data['kazakhstan']})\n"
             )
 
@@ -304,9 +316,10 @@ def format_stats_message(stats):
 async def send_admin_notification(bot: Bot, bot_id: str, user_id: int, username: str, action: str):
     """Отправляет уведомление в админский чат"""
     try:
+        bot_username = BOT_USERNAMES.get(bot_id, f"Bot {bot_id}")
         message = (
             f"📊 <b>Действие пользователя</b>\n\n"
-            f"🤖 Бот ID: <code>{bot_id}</code>\n"
+            f"🤖 Бот: {bot_username}\n"
             f"👤 User ID: <code>{user_id}</code>\n"
             f"📝 Username: @{username if username else 'Не указан'}\n"
             f"🎯 Действие: {action}"
