@@ -15,22 +15,20 @@ ADMIN_CHAT_ID = -1003410520287
 STATS_DIR = Path("stats_data")
 STATS_DIR.mkdir(exist_ok=True)
 
+# Файл для хранения токенов ботов
+TOKENS_FILE = Path("bot_tokens.json")
+
 # Токен статистического бота
 STATS_BOT_TOKEN = "8149773704:AAEMPILxahaM1q_iJB1pPq1yesOs4pGSlNs"
 
-# Список всех основных ботов
-BOT_TOKENS = {
-    "8236682033": "8236682033:AAFeu-Kt3UWSuxpNmfkUiB_y7eOxlKyHErE",
-    "8512131261": "8512131261:AAHgbkXUzEA17cjmTL1DhUVj_w_nLRRlmxE",
-    "8487915930": "8487915930:AAEOjW-EM3adl2d0JFU0gSqv-qPA0u9-jC0",
-    "8522600978": "8522600978:AAHYw9idOsu8w4S336lroAGRsr8aDODeP9I",
-    "8263965404": "8263965404:AAEDuMdtm3S5XvT7_YfnARMr_mYzvg5Y95U",
-    "8557307240": "8557307240:AAE5Bm3DMkc1AnSx-Qh9o1LLDsJnk48bOlQ",
-    "8587347355": "8587347355:AAGuRoCpPv4ew0eJySICQeRMTnnYIXZQ5Wg",
-}
+# Список всех основных ботов (будет загружен из файла)
+BOT_TOKENS = {}
 
 # Username'ы ботов (будут заполнены автоматически при старте)
 BOT_USERNAMES = {}
+
+# Словарь для хранения запущенных ботов (bot_id: task)
+RUNNING_BOTS = {}
 
 # Настройка логирования
 logging.basicConfig(
@@ -122,6 +120,76 @@ Acredit - Микрокредит под 0% до 145.000 тенге
 
 Vivus - до 170.000 тенге без %
 ➡ https://cutt.ly/XeYPNQwo"""
+
+
+# ========== ФУНКЦИИ УПРАВЛЕНИЯ ТОКЕНАМИ ==========
+def load_tokens():
+    """Загружает токены ботов из файла"""
+    if TOKENS_FILE.exists():
+        try:
+            with open(TOKENS_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Failed to load tokens: {e}")
+            return {}
+
+    # Если файл не существует, создаем с начальными токенами
+    initial_tokens = {
+        "8236682033": "8236682033:AAFeu-Kt3UWSuxpNmfkUiB_y7eOxlKyHErE",
+        "8512131261": "8512131261:AAFzPt_cZjJYwObhKWkQb0IYmcA1scAaZs0",
+        "8487915930": "8487915930:AAEjmQ9gKrg8fN53KQUdoEwBYJPyNQz7Kqk",
+        "8522600978": "8522600978:AAFdjdcREfPFE_Ak4GbWHZ0u9hpb2RxWJ1I",
+        "8263965404": "8263965404:AAHr7cDbSbXPbYU1k2zX3iNB-_Jt3R5bRuA",
+        "8557307240": "8557307240:AAGHsOWEsHJYF_vhC39XXsUGVAl7kUg9Zxs",
+        "8587347355": "8587347355:AAECr0VrZf4XkJpH7xtf5P8IChEpB42oMME"
+    }
+    save_tokens(initial_tokens)
+    return initial_tokens
+
+
+def save_tokens(tokens):
+    """Сохраняет токены ботов в файл"""
+    try:
+        with open(TOKENS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(tokens, f, ensure_ascii=False, indent=2)
+        logger.info(f"Tokens saved successfully: {len(tokens)} bots")
+    except Exception as e:
+        logger.error(f"Failed to save tokens: {e}")
+
+
+async def validate_and_add_token(token: str):
+    """Валидирует токен и добавляет его в систему"""
+    # Базовая проверка формата токена (должен быть вида "123456:ABC-DEF...")
+    if not token or ':' not in token:
+        return False, "❌ Неверный формат токена"
+
+    try:
+        # Пытаемся получить информацию о боте
+        test_bot = Bot(token=token)
+        me = await test_bot.get_me()
+        bot_id = str(me.id)
+        username = f"@{me.username}" if me.username else f"Bot {bot_id}"
+        await test_bot.session.close()
+
+        # Проверяем, не добавлен ли уже этот бот
+        if bot_id in BOT_TOKENS:
+            return False, f"❌ Бот {username} уже добавлен в систему"
+
+        # Добавляем токен в словарь и сохраняем
+        BOT_TOKENS[bot_id] = token
+        BOT_USERNAMES[bot_id] = username
+        save_tokens(BOT_TOKENS)
+
+        # Запускаем бота
+        task = asyncio.create_task(run_loan_bot(bot_id, token))
+        RUNNING_BOTS[bot_id] = task
+
+        logger.info(f"✅ New bot added and started: {username} ({bot_id})")
+        return True, f"✅ Бот {username} успешно добавлен и запущен!\n\n🤖 ID: <code>{bot_id}</code>"
+
+    except Exception as e:
+        logger.error(f"Failed to validate token: {e}")
+        return False, f"❌ Ошибка валидации токена: {type(e).__name__}"
 
 
 # ========== ФУНКЦИИ КЛАВИАТУР ==========
@@ -432,6 +500,59 @@ async def cmd_stats(message: Message):
     )
 
 
+async def cmd_add(message: Message):
+    """Обработчик команды /add <token> - добавляет нового бота"""
+    # Проверяем, что команда пришла из админского чата
+    if message.chat.id != ADMIN_CHAT_ID:
+        logger.warning(f"Add command from unauthorized chat: {message.chat.id}")
+        return
+
+    # Извлекаем токен из сообщения
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer(
+            "❌ Использование: /add <токен_бота>\n\n"
+            "Пример: /add 123456789:ABCdefGHIjklMNOpqrsTUVwxyz",
+            parse_mode="HTML"
+        )
+        return
+
+    token = parts[1].strip().strip('"').strip("'")
+    logger.info(f"Add command received for token: {token[:20]}...")
+
+    # Отправляем сообщение о начале проверки
+    status_msg = await message.answer("⏳ Проверяю токен...")
+
+    # Валидируем и добавляем токен
+    success, result_message = await validate_and_add_token(token)
+
+    # Обновляем сообщение с результатом
+    await status_msg.edit_text(result_message, parse_mode="HTML")
+
+
+async def cmd_list(message: Message):
+    """Обработчик команды /list - показывает список всех ботов"""
+    # Проверяем, что команда пришла из админского чата
+    if message.chat.id != ADMIN_CHAT_ID:
+        logger.warning(f"List command from unauthorized chat: {message.chat.id}")
+        return
+
+    logger.info(f"List command received from {message.from_user.id} in admin chat")
+
+    if not BOT_TOKENS:
+        await message.answer("❌ Нет активных ботов")
+        return
+
+    response = f"🤖 <b>Список активных ботов:</b> {len(BOT_TOKENS)}\n\n"
+
+    for bot_id, token in BOT_TOKENS.items():
+        username = BOT_USERNAMES.get(bot_id, f"Bot {bot_id}")
+        status = "✅ Запущен" if bot_id in RUNNING_BOTS else "⏸ Остановлен"
+        response += f"{status} {username}\n📱 ID: <code>{bot_id}</code>\n\n"
+
+    await message.answer(response, parse_mode="HTML")
+
+
 async def run_stats_bot():
     """Запуск статистического бота"""
     try:
@@ -439,7 +560,10 @@ async def run_stats_bot():
         bot = Bot(token=STATS_BOT_TOKEN)
         dp = Dispatcher()
 
+        # Регистрируем команды
         dp.message.register(cmd_stats, Command("stats"))
+        dp.message.register(cmd_add, Command("add"))
+        dp.message.register(cmd_list, Command("list"))
 
         await bot.delete_webhook(drop_pending_updates=True)
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
@@ -475,6 +599,12 @@ async def run_loan_bot(bot_id: str, bot_token: str):
 # ========== ГЛАВНАЯ ФУНКЦИЯ ==========
 async def main():
     """Запускает все боты одновременно"""
+    global BOT_TOKENS
+
+    # Загружаем токены из файла
+    logger.info("📂 Загрузка токенов ботов из файла...")
+    BOT_TOKENS = load_tokens()
+
     logger.info("=" * 60)
     logger.info(f"🚀 ЗАПУСК ВСЕХ БОТОВ")
     logger.info("=" * 60)
@@ -504,6 +634,7 @@ async def main():
     for bot_id, bot_token in BOT_TOKENS.items():
         task = asyncio.create_task(run_loan_bot(bot_id, bot_token))
         tasks.append(task)
+        RUNNING_BOTS[bot_id] = task
         logger.info(f"✅ Основной бот {BOT_USERNAMES.get(bot_id, bot_id)} добавлен в очередь")
 
     # Добавляем задачу для статистического бота
