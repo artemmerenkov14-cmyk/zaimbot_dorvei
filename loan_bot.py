@@ -24,7 +24,7 @@ PROXY_TYPE = "socks5"
 PROXY_URL = f"{PROXY_TYPE}://{PROXY_USERNAME}:{PROXY_PASSWORD}@{PROXY_HOST}:{PROXY_PORT}"
 
 # Админский чат для уведомлений
-ADMIN_CHAT_ID = -1003481337231
+ADMIN_CHAT_ID = -1003410520287
 
 # Файл для хранения статистики
 STATS_FILE = Path("bot_stats.json")

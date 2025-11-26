@@ -10,7 +10,7 @@ from aiogram.types import Message
 BOT_TOKEN = "8149773704:AAEMPILxahaM1q_iJB1pPq1yesOs4pGSlNs"
 
 # Админский чат, откуда принимать команды
-ADMIN_CHAT_ID = -1003481337231
+ADMIN_CHAT_ID = -1003410520287
 
 # Директория со статистикой всех ботов
 STATS_DIR = Path("stats_data")

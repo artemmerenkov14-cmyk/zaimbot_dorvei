@@ -9,7 +9,7 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKe
 
 # ========== НАСТРОЙКИ ==========
 # Админский чат для уведомлений
-ADMIN_CHAT_ID = -1003481337231
+ADMIN_CHAT_ID = -1003410520287
 
 # Директория для хранения статистики
 STATS_DIR = Path("stats_data")
