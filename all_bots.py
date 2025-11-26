@@ -29,16 +29,8 @@ BOT_TOKENS = {
     "8587347355": "8587347355:AAGuRoCpPv4ew0eJySICQeRMTnnYIXZQ5Wg",
 }
 
-# Username'ы ботов (Bot ID → Username)
-BOT_USERNAMES = {
-    "8236682033": "@bot1_username",  # Замените на реальные username'ы
-    "8512131261": "@bot2_username",
-    "8487915930": "@bot3_username",
-    "8522600978": "@bot4_username",
-    "8263965404": "@bot5_username",
-    "8557307240": "@bot6_username",
-    "8587347355": "@bot7_username",
-}
+# Username'ы ботов (будут заполнены автоматически при старте)
+BOT_USERNAMES = {}
 
 # Настройка логирования
 logging.basicConfig(
@@ -458,6 +450,19 @@ async def run_stats_bot():
         logger.info("Stats bot stopped")
 
 
+async def fetch_bot_username(bot_id: str, bot_token: str):
+    """Получает username бота через API"""
+    try:
+        bot = Bot(token=bot_token)
+        me = await bot.get_me()
+        username = f"@{me.username}" if me.username else f"Bot {bot_id}"
+        await bot.session.close()
+        return username
+    except Exception as e:
+        logger.error(f"Failed to get username for bot {bot_id}: {e}")
+        return f"Bot {bot_id}"
+
+
 async def run_loan_bot(bot_id: str, bot_token: str):
     """Запускает один бот займов"""
     try:
@@ -478,13 +483,28 @@ async def main():
     logger.info(f"📊 Всего ботов: {len(BOT_TOKENS) + 1}")
     logger.info("=" * 60)
 
+    # Получаем username'ы всех ботов через API
+    logger.info("🔍 Получение username'ов ботов через API...")
+    username_tasks = []
+    for bot_id, bot_token in BOT_TOKENS.items():
+        task = fetch_bot_username(bot_id, bot_token)
+        username_tasks.append((bot_id, task))
+
+    # Ждем получения всех username'ов
+    for bot_id, task in username_tasks:
+        username = await task
+        BOT_USERNAMES[bot_id] = username
+        logger.info(f"✅ {bot_id} → {username}")
+
+    logger.info("=" * 60)
+
     tasks = []
 
     # Добавляем задачи для основных ботов
     for bot_id, bot_token in BOT_TOKENS.items():
         task = asyncio.create_task(run_loan_bot(bot_id, bot_token))
         tasks.append(task)
-        logger.info(f"✅ Основной бот {bot_id} добавлен в очередь")
+        logger.info(f"✅ Основной бот {BOT_USERNAMES.get(bot_id, bot_id)} добавлен в очередь")
 
     # Добавляем задачу для статистического бота
     stats_task = asyncio.create_task(run_stats_bot())
