@@ -20,6 +20,9 @@ PROXY_TYPE = "socks5"
 # Формируем URL прокси
 PROXY_URL = f"{PROXY_TYPE}://{PROXY_USERNAME}:{PROXY_PASSWORD}@{PROXY_HOST}:{PROXY_PORT}"
 
+# Админский чат для уведомлений
+ADMIN_CHAT_ID = -1003481337231
+
 # Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
@@ -130,10 +133,37 @@ def get_back_keyboard():
     return keyboard
 
 
+# ========== ФУНКЦИИ УВЕДОМЛЕНИЙ ==========
+async def send_admin_notification(bot: Bot, user_id: int, username: str, action: str):
+    """Отправляет уведомление в админский чат"""
+    try:
+        message = (
+            f"📊 <b>Действие пользователя</b>\n\n"
+            f"👤 User ID: <code>{user_id}</code>\n"
+            f"📝 Username: @{username if username else 'Не указан'}\n"
+            f"🎯 Действие: {action}"
+        )
+        await bot.send_message(
+            chat_id=ADMIN_CHAT_ID,
+            text=message,
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        logger.error(f"Failed to send admin notification: {e}")
+
+
 # ========== ОБРАБОТЧИКИ ==========
-async def cmd_start(message: Message):
+async def cmd_start(message: Message, bot: Bot):
     """Обработчик команды /start"""
     logger.info(f"User {message.from_user.id} ({message.from_user.username}) started the bot")
+
+    # Отправляем уведомление в админский чат
+    await send_admin_notification(
+        bot=bot,
+        user_id=message.from_user.id,
+        username=message.from_user.username,
+        action="🚀 Запустил бота (/start)"
+    )
 
     await message.answer(
         text=START_MESSAGE,
@@ -141,9 +171,17 @@ async def cmd_start(message: Message):
     )
 
 
-async def callback_country_russia(callback: CallbackQuery):
+async def callback_country_russia(callback: CallbackQuery, bot: Bot):
     """Обработчик выбора России"""
     logger.info(f"User {callback.from_user.id} selected Russia")
+
+    # Отправляем уведомление в админский чат
+    await send_admin_notification(
+        bot=bot,
+        user_id=callback.from_user.id,
+        username=callback.from_user.username,
+        action="🇷🇺 Выбрал Россию"
+    )
 
     await callback.message.edit_text(
         text=RUSSIA_MESSAGE,
@@ -153,9 +191,17 @@ async def callback_country_russia(callback: CallbackQuery):
     await callback.answer()
 
 
-async def callback_country_kazakhstan(callback: CallbackQuery):
+async def callback_country_kazakhstan(callback: CallbackQuery, bot: Bot):
     """Обработчик выбора Казахстана"""
     logger.info(f"User {callback.from_user.id} selected Kazakhstan")
+
+    # Отправляем уведомление в админский чат
+    await send_admin_notification(
+        bot=bot,
+        user_id=callback.from_user.id,
+        username=callback.from_user.username,
+        action="🇰🇿 Выбрал Казахстан"
+    )
 
     await callback.message.edit_text(
         text=KAZAKHSTAN_MESSAGE,
