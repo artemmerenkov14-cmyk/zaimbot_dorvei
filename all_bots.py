@@ -501,33 +501,92 @@ async def cmd_stats(message: Message):
 
 
 async def cmd_add(message: Message):
-    """Обработчик команды /add <token> - добавляет нового бота"""
+    """Обработчик команды /add <tokens> - добавляет одного или несколько ботов"""
     # Проверяем, что команда пришла из админского чата
     if message.chat.id != ADMIN_CHAT_ID:
         logger.warning(f"Add command from unauthorized chat: {message.chat.id}")
         return
 
-    # Извлекаем токен из сообщения
+    # Извлекаем токены из сообщения
     parts = message.text.split(maxsplit=1)
     if len(parts) < 2:
         await message.answer(
-            "❌ Использование: /add <токен_бота>\n\n"
-            "Пример: /add 123456789:ABCdefGHIjklMNOpqrsTUVwxyz",
+            "❌ <b>Использование:</b> /add &lt;токен(ы)&gt;\n\n"
+            "<b>Один токен:</b>\n"
+            "/add 123456789:ABCdefGHIjklMNOpqrsTUVwxyz\n\n"
+            "<b>Несколько токенов (через пробел):</b>\n"
+            "/add токен1 токен2 токен3\n\n"
+            "<b>Несколько токенов (построчно):</b>\n"
+            "/add\n"
+            "токен1\n"
+            "токен2\n"
+            "токен3",
             parse_mode="HTML"
         )
         return
 
-    token = parts[1].strip().strip('"').strip("'")
-    logger.info(f"Add command received for token: {token[:20]}...")
+    # Парсим токены - поддерживаем разделение пробелами, новыми строками и запятыми
+    tokens_text = parts[1].strip()
+    # Заменяем запятые на пробелы, затем разделяем по пробелам и новым строкам
+    tokens_text = tokens_text.replace(',', ' ')
+    raw_tokens = tokens_text.split()
+
+    # Очищаем токены от кавычек
+    tokens = [token.strip().strip('"').strip("'") for token in raw_tokens if token.strip()]
+
+    if not tokens:
+        await message.answer("❌ Не найдено ни одного токена")
+        return
+
+    logger.info(f"Add command received for {len(tokens)} token(s)")
 
     # Отправляем сообщение о начале проверки
-    status_msg = await message.answer("⏳ Проверяю токен...")
+    status_msg = await message.answer(
+        f"⏳ Обрабатываю {len(tokens)} токен(ов)...\n\n"
+        "Это может занять некоторое время."
+    )
 
-    # Валидируем и добавляем токен
-    success, result_message = await validate_and_add_token(token)
+    # Счетчики результатов
+    success_count = 0
+    failed_count = 0
+    results = []
+
+    # Обрабатываем каждый токен
+    for i, token in enumerate(tokens, 1):
+        logger.info(f"Processing token {i}/{len(tokens)}: {token[:20]}...")
+
+        # Валидируем и добавляем токен
+        success, result_message = await validate_and_add_token(token)
+
+        if success:
+            success_count += 1
+            results.append(f"✅ {i}. {result_message.split('✅ Бот ')[1].split(' успешно')[0]}")
+        else:
+            failed_count += 1
+            # Извлекаем короткое сообщение об ошибке
+            error_msg = result_message.replace('❌ ', '')
+            results.append(f"❌ {i}. {error_msg}")
+
+    # Формируем итоговое сообщение
+    summary = (
+        f"📊 <b>Результаты обработки:</b>\n\n"
+        f"✅ Успешно добавлено: {success_count}\n"
+        f"❌ Ошибок: {failed_count}\n"
+        f"📝 Всего обработано: {len(tokens)}\n\n"
+        f"<b>Детали:</b>\n"
+    )
+
+    # Добавляем результаты (ограничиваем вывод если много токенов)
+    if len(results) <= 20:
+        summary += "\n".join(results)
+    else:
+        # Показываем первые 15 и последние 5
+        summary += "\n".join(results[:15])
+        summary += f"\n\n... (скрыто {len(results) - 20} результатов) ...\n\n"
+        summary += "\n".join(results[-5:])
 
     # Обновляем сообщение с результатом
-    await status_msg.edit_text(result_message, parse_mode="HTML")
+    await status_msg.edit_text(summary, parse_mode="HTML")
 
 
 async def cmd_list(message: Message):
