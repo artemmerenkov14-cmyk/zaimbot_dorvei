@@ -1,5 +1,8 @@
 import asyncio
 import logging
+import json
+from datetime import datetime
+from pathlib import Path
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
@@ -22,6 +25,9 @@ PROXY_URL = f"{PROXY_TYPE}://{PROXY_USERNAME}:{PROXY_PASSWORD}@{PROXY_HOST}:{PRO
 
 # Админский чат для уведомлений
 ADMIN_CHAT_ID = -1003481337231
+
+# Файл для хранения статистики
+STATS_FILE = Path("bot_stats.json")
 
 # Настройка логирования
 logging.basicConfig(
@@ -133,7 +139,63 @@ def get_back_keyboard():
     return keyboard
 
 
-# ========== ФУНКЦИИ УВЕДОМЛЕНИЙ ==========
+# ========== ФУНКЦИИ СТАТИСТИКИ ==========
+def load_stats():
+    """Загружает статистику из файла"""
+    if STATS_FILE.exists():
+        try:
+            with open(STATS_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Failed to load stats: {e}")
+
+    # Возвращаем пустую статистику
+    return {
+        "users": {},  # {user_id: {"username": "...", "first_seen": "...", "last_action": "..."}}
+        "countries": {
+            "russia": 0,
+            "kazakhstan": 0
+        }
+    }
+
+
+def save_stats(stats):
+    """Сохраняет статистику в файл"""
+    try:
+        with open(STATS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(stats, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error(f"Failed to save stats: {e}")
+
+
+def update_user_stats(user_id: int, username: str, action: str = None):
+    """Обновляет статистику пользователя"""
+    stats = load_stats()
+
+    user_id_str = str(user_id)
+    now = datetime.now().isoformat()
+
+    # Добавляем или обновляем пользователя
+    if user_id_str not in stats["users"]:
+        stats["users"][user_id_str] = {
+            "username": username,
+            "first_seen": now,
+            "last_action": action or "start"
+        }
+    else:
+        stats["users"][user_id_str]["username"] = username
+        stats["users"][user_id_str]["last_action"] = action or stats["users"][user_id_str]["last_action"]
+
+    # Обновляем счетчик стран
+    if action == "russia":
+        stats["countries"]["russia"] += 1
+    elif action == "kazakhstan":
+        stats["countries"]["kazakhstan"] += 1
+
+    save_stats(stats)
+    return stats
+
+
 async def send_admin_notification(bot: Bot, user_id: int, username: str, action: str):
     """Отправляет уведомление в админский чат"""
     try:
@@ -157,6 +219,9 @@ async def cmd_start(message: Message, bot: Bot):
     """Обработчик команды /start"""
     logger.info(f"User {message.from_user.id} ({message.from_user.username}) started the bot")
 
+    # Сохраняем статистику пользователя
+    update_user_stats(message.from_user.id, message.from_user.username, "start")
+
     # Отправляем уведомление в админский чат
     await send_admin_notification(
         bot=bot,
@@ -175,13 +240,8 @@ async def callback_country_russia(callback: CallbackQuery, bot: Bot):
     """Обработчик выбора России"""
     logger.info(f"User {callback.from_user.id} selected Russia")
 
-    # Отправляем уведомление в админский чат
-    await send_admin_notification(
-        bot=bot,
-        user_id=callback.from_user.id,
-        username=callback.from_user.username,
-        action="🇷🇺 Выбрал Россию"
-    )
+    # Сохраняем статистику выбора страны
+    update_user_stats(callback.from_user.id, callback.from_user.username, "russia")
 
     await callback.message.edit_text(
         text=RUSSIA_MESSAGE,
@@ -195,13 +255,8 @@ async def callback_country_kazakhstan(callback: CallbackQuery, bot: Bot):
     """Обработчик выбора Казахстана"""
     logger.info(f"User {callback.from_user.id} selected Kazakhstan")
 
-    # Отправляем уведомление в админский чат
-    await send_admin_notification(
-        bot=bot,
-        user_id=callback.from_user.id,
-        username=callback.from_user.username,
-        action="🇰🇿 Выбрал Казахстан"
-    )
+    # Сохраняем статистику выбора страны
+    update_user_stats(callback.from_user.id, callback.from_user.username, "kazakhstan")
 
     await callback.message.edit_text(
         text=KAZAKHSTAN_MESSAGE,
