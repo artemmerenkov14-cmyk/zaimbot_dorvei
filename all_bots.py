@@ -410,13 +410,13 @@ class LoanBot:
 
 # ========== СТАТИСТИЧЕСКИЙ БОТ ==========
 async def cmd_stats(message: Message):
-    """Обработчик команды /stats - работает только в приватном чате"""
-    # Проверяем, что команда пришла из приватного чата
-    if message.chat.type != "private":
-        logger.warning(f"Stats command from non-private chat: {message.chat.type}")
+    """Обработчик команды /stats - работает только в админском чате"""
+    # Проверяем, что команда пришла из админского чата
+    if message.chat.id != ADMIN_CHAT_ID:
+        logger.warning(f"Stats command from unauthorized chat: {message.chat.id}")
         return
 
-    logger.info(f"Stats command received from {message.from_user.id}")
+    logger.info(f"Stats command received from {message.from_user.id} in admin chat")
 
     stats = load_all_stats()
     stats_message = format_stats_message(stats)
